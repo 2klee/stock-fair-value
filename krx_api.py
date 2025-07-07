@@ -7,6 +7,7 @@ BASE_MAST_URL = "http://openapi.krx.co.kr/openapi/service/sto/stk_mast_get"
 AUTH_KEY = os.environ.get("AUTH_KEY") or ""
 
 def get_today():
+    # 기본 오늘 날짜 (필요시 휴장일 고려해서 수정하세요)
     return datetime.datetime.now().strftime("%Y%m%d")
 
 def get_isin_from_input(user_input):
@@ -20,10 +21,9 @@ def get_isin_from_input(user_input):
     if response.status_code == 200:
         items = response.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
         for item in items:
-        if user_input in (item.get("itmsNm", ""), item.get("srtnCd", "")):
-            print("찾은 ISIN:", item.get("isuCd"))
-            return item.get("isuCd")
-    print("ISIN 못 찾음:", user_input)
+            # 종목명 또는 종목코드가 포함된 경우 반환
+            if user_input == item.get("itmsNm") or user_input == item.get("srtnCd"):
+                return item.get("isuCd")
     return None
 
 def get_stock_info_by_name_or_code(user_input):
