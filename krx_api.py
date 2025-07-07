@@ -54,17 +54,3 @@ def get_fair_value(data):
         return eps * per
     except:
         return 0
-
-
-### 📄 requirements.txt
-streamlit
-requests
-
-
-### 📄 .streamlit/secrets.toml (절대 GitHub에 올리지 마세요)
-[default]
-AUTH_KEY = "16B23371BBDC4107AB07CBBBBA14ADBCD2525DF0"
-
-
-### 📄 .gitignore
-.streamlit/secrets.toml
