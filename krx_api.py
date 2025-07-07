@@ -1,8 +1,8 @@
 import requests
 import streamlit as st
 
-BASE_MAST_URL = "http://openapi.krx.co.kr/openapi/service/sto/stk_mast_get"
-BASE_INFO_URL = "http://openapi.krx.co.kr/openapi/service/sto/stk_bydd_trd"
+BASE_MAST_URL = "https://data-dbg.krx.co.kr/svc/apis/sto/stk_mast_get.json"
+BASE_INFO_URL = "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd.json"
 AUTH_KEY = st.secrets["AUTH_KEY"]
 
 
@@ -11,11 +11,11 @@ def get_isin_from_input(user_input):
     print("✅ 사용자 입력값:", user_input)
 
     params = {
-        "serviceKey": AUTH_KEY,
-        "pageNo": "1",
-        "numOfRows": "5000",
-        "resultType": "json"
-    }
+    "serviceKey": AUTH_KEY,
+    "resultType": "json",
+    "pageNo": "1",
+    "numOfRows": "5000"
+}
 
     try:
         response = requests.get(BASE_MAST_URL, params=params)
