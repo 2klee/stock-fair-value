@@ -1,15 +1,15 @@
 import streamlit as st
-from krx_api import get_stock_info_by_code, get_fair_value
+from krx_api import get_stock_info_by_name_or_code, get_fair_value
 
 st.set_page_config(page_title="KRX 적정주가 계산기", layout="centered")
 st.title("📊 KRX 적정주가 계산기")
 
-stock_code = st.text_input("종목코드 (6자리)", "005930")
+user_input = st.text_input("종목코드 또는 종목명", "삼성전자 또는 005930")
 
 if st.button("계산하기"):
     with st.spinner("데이터를 불러오는 중..."):
         try:
-            result = get_stock_info_by_code(stock_code)
+            result = get_stock_info_by_name_or_code(user_input)
             if result is None:
                 st.error("📛 해당 종목의 데이터를 찾을 수 없습니다.")
             else:
