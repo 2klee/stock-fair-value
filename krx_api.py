@@ -11,6 +11,7 @@ def get_today():
     return datetime.datetime.now().strftime("%Y%m%d")
 
 def get_isin_from_input(user_input):
+    user_input = user_input.strip().lower()
     params = {
         "serviceKey": AUTH_KEY,
         "pageNo": "1",
@@ -21,8 +22,9 @@ def get_isin_from_input(user_input):
     if response.status_code == 200:
         items = response.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
         for item in items:
-            # 종목명 또는 종목코드가 포함된 경우 반환
-            if user_input == item.get("itmsNm") or user_input == item.get("srtnCd"):
+            name = item.get("itmsNm", "").lower()
+            code = item.get("srtnCd", "").lower()
+            if user_input in (name, code):
                 return item.get("isuCd")
     return None
 
