@@ -1,60 +1,76 @@
 import requests
-import datetime
-import os
+import streamlit as st
 
-BASE_TRD_URL = "http://openapi.krx.co.kr/openapi/service/sto/stk_bydd_trd"
 BASE_MAST_URL = "http://openapi.krx.co.kr/openapi/service/sto/stk_mast_get"
-AUTH_KEY = os.environ.get("AUTH_KEY") or ""
+BASE_INFO_URL = "http://openapi.krx.co.kr/openapi/service/sto/stk_bydd_trd"
+AUTH_KEY = st.secrets["AUTH_KEY"]
 
-def get_today():
-    # 기본 오늘 날짜 (필요시 휴장일 고려해서 수정하세요)
-    return datetime.datetime.now().strftime("%Y%m%d")
 
 def get_isin_from_input(user_input):
-    user_input = user_input.strip().lower()
+    print("🔍 [get_isin_from_input] 실행됨")
+    print("✅ 사용자 입력값:", user_input)
+
     params = {
         "serviceKey": AUTH_KEY,
         "pageNo": "1",
         "numOfRows": "5000",
         "resultType": "json"
     }
-    response = requests.get(BASE_MAST_URL, params=params)
-    if response.status_code == 200:
-        items = response.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-        for item in items:
-            name = item.get("itmsNm", "").lower()
-            code = item.get("srtnCd", "").lower()
-            if user_input in (name, code):
-                return item.get("isuCd")
+
+    try:
+        response = requests.get(BASE_MAST_URL, params=params)
+        print("📡 API 응답 코드:", response.status_code)
+
+        if response.status_code == 200:
+            data = response.json()
+            items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
+            print(f"📦 종목 수신 개수: {len(items)}개")
+
+            user_input = user_input.strip().lower()
+            for item in items:
+                name = item.get("itmsNm", "").lower()
+                code = item.get("srtnCd", "").lower()
+                isin = item.get("isuCd", "")
+                if user_input in name or user_input in code:
+                    print(f"🎯 일치 항목 찾음: {name} / {code} → ISIN: {isin}")
+                    return isin
+
+            print("❗ 일치하는 종목 없음")
+        else:
+            print("🚨 API 응답 실패:", response.text)
+
+    except Exception as e:
+        print("❌ 예외 발생:", e)
+
     return None
 
-def get_stock_info_by_name_or_code(user_input):
-    if not AUTH_KEY:
-        raise ValueError("AUTH_KEY가 설정되지 않았습니다. secrets.toml 또는 환경변수에서 등록해주세요.")
 
+def get_stock_info_by_name_or_code(user_input):
     isin = get_isin_from_input(user_input)
     if not isin:
         return None
 
     params = {
-        "basDd": get_today(),
+        "serviceKey": AUTH_KEY,
+        "basDd": "20240705",  # 날짜는 테스트용 고정값 또는 오늘 날짜로 설정 가능
         "isuCd": isin,
-        "serviceKey": AUTH_KEY
+        "resultType": "json"
     }
-    response = requests.get(BASE_TRD_URL, params=params)
-    if response.status_code == 200:
-        try:
-            items = response.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
-            if items:
-                return items[0]
-        except:
-            return None
-    return None
 
-def get_fair_value(data):
     try:
-        eps = float(data.get("eps", 0))
-        per = float(data.get("per", 0))
-        return eps * per
-    except:
-        return 0
+        response = requests.get(BASE_INFO_URL, params=params)
+        print("📡 종목 상세 API 응답 코드:", response.status_code)
+        if response.status_code == 200:
+            data = response.json()
+            items = data.get("response", {}).get("body", {}).get("items", {}).get("item", [])
+            if items:
+                print("📊 종목 데이터:", items[0])
+                return items[0]
+            else:
+                print("📭 데이터 없음")
+        else:
+            print("⚠️ 응답 실패:", response.text)
+    except Exception as e:
+        print("❌ 예외 발생:", e)
+
+    return None
