@@ -4,12 +4,12 @@ from krx_api import get_stock_info_by_name_or_code, get_fair_value
 st.set_page_config(page_title="KRX 적정주가 계산기", layout="centered")
 st.title("📊 KRX 적정주가 계산기")
 
-user_input = st.text_input("종목코드 또는 종목명", "삼성전자 또는 005930")
+user_input = st.text_input("종목코드 또는 종목명", value="")  # 초기값 공백으로 변경
 
 if st.button("계산하기"):
     with st.spinner("데이터를 불러오는 중..."):
         try:
-            result = get_stock_info_by_name_or_code(user_input)
+            result = get_stock_info_by_name_or_code(user_input.strip())
             if result is None:
                 st.error("📛 해당 종목의 데이터를 찾을 수 없습니다.")
             else:
@@ -20,6 +20,7 @@ if st.button("계산하기"):
                 fair_value = get_fair_value(result)
                 st.write("### 💰 적정주가 계산 결과")
                 st.metric(label="적정주가", value=f"{fair_value:,.0f}원")
+
                 try:
                     current_price = int(result.get("trdPrc", 0))
                     upside = (fair_value - current_price) / current_price * 100
@@ -27,4 +28,4 @@ if st.button("계산하기"):
                 except:
                     pass
         except Exception as e:
-            st.exception(e)
+            st.error(f"오류 발생: {e}")
