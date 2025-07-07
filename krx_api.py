@@ -20,8 +20,10 @@ def get_isin_from_input(user_input):
     if response.status_code == 200:
         items = response.json().get("response", {}).get("body", {}).get("items", {}).get("item", [])
         for item in items:
-            if user_input in (item.get("itmsNm", ""), item.get("srtnCd", "")):
-                return item.get("isuCd")
+        if user_input in (item.get("itmsNm", ""), item.get("srtnCd", "")):
+            print("찾은 ISIN:", item.get("isuCd"))
+            return item.get("isuCd")
+    print("ISIN 못 찾음:", user_input)
     return None
 
 def get_stock_info_by_name_or_code(user_input):
