@@ -4,7 +4,7 @@ import pandas as pd
 from datetime import datetime
 
 # 🔑 인증키
-API_KEY = st.secrets["API_KEY"]
+API_KEY = st.secrets["AUTH_KEY"]
 
 # ✅ 종목 리스트 가져오기 (코스피 + 코스닥)
 def fetch_stock_list():
