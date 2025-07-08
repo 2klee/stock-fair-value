@@ -57,8 +57,8 @@ if user_input:
     basic_info_df = get_krx_merged_basic_info(base_date)
     daily_info_df = get_krx_daily_trading_info(base_date)
 
-    st.write("KRX 기본정보 컬럼명:")
-    st.write(basic_info_df.columns.tolist())
+    # 디버깅: 컬럼 출력
+    st.write("📌 기본정보 컬럼:", basic_info_df.columns.tolist())
 
     # 종목 검색
     target_info = basic_info_df[
