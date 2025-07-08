@@ -1,13 +1,15 @@
 import streamlit as st
 import requests
 import pandas as pd
+import zipfile
+import io
 from datetime import datetime
 
 # === API 키 입력 ===
 DART_API_KEY = st.secrets["DART_API_KEY"]
 KRX_API_KEY = st.secrets["KRX_API_KEY"]
 
-# === DART corp_code 조회 (기존 ZIP XML 방식) ===
+# === DART corp_code 조회 ===
 @st.cache_data(show_spinner=False)
 def get_corp_code(company_name):
     url = "https://opendart.fss.or.kr/api/corpCode.xml"
@@ -21,7 +23,6 @@ def get_corp_code(company_name):
 # === KRX 공식 OpenAPI 종목 리스트 조회 ===
 @st.cache_data(show_spinner=False)
 def get_krx_stock_list(market="STK"):  # STK=코스피, KSQ=코스닥
-    st.write("KRX API 반환 컬럼명:", krx_df.columns)
     url = "http://openapi.krx.co.kr/openapi/contents/Stock/StockInfo"
     params = {
         "authKey": KRX_API_KEY,
@@ -81,13 +82,17 @@ if st.button("계산 시작"):
     with st.spinner("KRX 종목정보 조회 중..."):
         krx_df = get_krx_stock_list(market=market_code)
 
+    # ← 여기에서 컬럼명 확인용 출력!
+    st.write("KRX API 반환 컬럼명:", krx_df.columns)
+
     stock_row = krx_df[krx_df['isuKorNm'] == stock_name]
     if stock_row.empty:
         st.error("해당 종목을 찾을 수 없습니다.")
         st.stop()
 
-    price = int(stock_row.iloc[0]['lstPrc'])  # 현재가
-    shares = int(stock_row.iloc[0]['mrktTotAmt'])  # 시가총액 (KRW 단위)
+    price = int(stock_row.iloc[0]['lstPrc'])
+    shares = int(stock_row.iloc[0]['lstShr'])
+
     corp_code = get_corp_code(stock_name)
     if corp_code is None:
         st.error("DART 기업코드를 찾을 수 없습니다.")
@@ -116,8 +121,7 @@ if st.button("계산 시작"):
         revenue_y0 = extract_item(df0, "매출액")
         sales_growth = ((revenue_y1 - revenue_y0) / revenue_y0) if revenue_y0 else 0
 
-    # 간단하게 업종별 PER 대신 고정값 사용 가능 (추가 개발 필요)
-    avg_per = 10.0  
+    avg_per = 10.0
     peg_adj = 0
     growth_weight = max(0, sales_growth) * 2
     roe_adj = 1.2 if roe >= 0.1 else 1.0
