@@ -37,8 +37,11 @@ def get_financials(corp_code, year):
         return pd.DataFrame([])  # 빈 DataFrame 반환
 
 def extract_item(df, item):
+    if df.empty:
+        return 0
     f = df[df['account_nm'] == item]
-    if f.empty: return 0
+    if f.empty:
+        return 0
     return int(f.iloc[0]['thstrm_amount'].replace(',', ''))
 
 def calculate_fair_price(data):
