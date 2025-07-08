@@ -9,7 +9,7 @@ DART_API_KEY = st.secrets["DART_API_KEY"]
 KRX_API_KEY = st.secrets["KRX_API_KEY"]  # 현재 사용 안 하지만 필요시 활용 가능
 
 # 기본 URL
-KRX_BASE = "http://data-krx.co.kr/svc/apis/sto"
+KRX_BASE = "http://data-dbg.krx.co.kr/svc/apis/sto"
 DART_BASE = "https://opendart.fss.or.kr/api"
 
 # 공통 헤더 (KRX API 우회용)
