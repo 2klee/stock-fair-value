@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import requests
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # 인증키 (Streamlit secrets에 저장했다고 가정)
 KRX_API_KEY = st.secrets["KRX_API_KEY"]
@@ -38,8 +38,12 @@ def search_stock(df, query):
 # Streamlit UI
 st.title("📈 KRX API - 종목 조회기 (data-dbg.krx.co.kr)")
 
+# 어제 날짜 계산
+yesterday = datetime.today() - timedelta(days=1)
+
+# 기준일자 입력 (기본값 어제)
+base_date = st.date_input("기준일자", yesterday).strftime("%Y%m%d")
 user_input = st.text_input("종목명 또는 종목코드 입력 (예: 삼성전자 또는 005930)")
-base_date = st.date_input("기준일자", datetime.today()).strftime("%Y%m%d")
 
 if user_input:
     with st.spinner("KRX API에서 데이터 조회 중..."):
