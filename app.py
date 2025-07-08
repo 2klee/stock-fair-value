@@ -20,21 +20,25 @@ def get_corp_code(company_name):
 
 @st.cache_data
 def get_financials(corp_code, year):
-    url = f"https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json"
-    params = {
-        "crtfc_key": DART_API_KEY,
-        "corp_code": corp_code,
-        "bsns_year": year,
-        "reprt_code": "11011",  # 사업보고서
-        "fs_div": "CFS"         # 연결재무제표
-    }
-    r = requests.get(url, params=params).json()
+    url = "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json"
+    
+    for fs_div in ["CFS", "OFS"]:  # 연결재무제표 -> 개별재무제표 순으로 시도
+        params = {
+            "crtfc_key": DART_API_KEY,
+            "corp_code": corp_code,
+            "bsns_year": year,
+            "reprt_code": "11011",
+            "fs_div": fs_div
+        }
+        r = requests.get(url, params=params).json()
+        if r.get("status") == "013":
+            continue  # 데이터 없음, 다음 시도
+        if "list" in r:
+            return pd.DataFrame(r["list"])
+        else:
+            st.warning(f"{year}년 {fs_div} 재무제표를 찾을 수 없습니다. (message: {r.get('message', '')})")
+    return pd.DataFrame([])
 
-    if r.get("status") != "013" and "list" in r:
-        return pd.DataFrame(r["list"])
-    else:
-        st.warning(f"{year}년 재무제표를 찾을 수 없습니다. (message: {r.get('message', '')})")
-        return pd.DataFrame([])  # 빈 DataFrame 반환
 
 def extract_item(df, item):
     if df.empty:
