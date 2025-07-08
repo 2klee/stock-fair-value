@@ -53,10 +53,10 @@ if user_input:
     with st.spinner("📡 KRX Open API에서 데이터 불러오는 중..."):
         try:
             # 코스피 + 코스닥 전체 데이터 불러오기
-            otp_kospi = get_otp("MKD/13/1301/13010101/mkd13010101", {"basDt": base_date})
+            otp_kospi = get_otp("MKD/13/1301/13010101/mkd13010101", {"basDd": base_date})
             df_kospi = fetch_krx_data(otp_kospi)
 
-            otp_kosdaq = get_otp("MKD/13/1301/13010201/mkd13010201", {"basDt": base_date})
+            otp_kosdaq = get_otp("MKD/13/1301/13010201/mkd13010201", {"basDd": base_date})
             df_kosdaq = fetch_krx_data(otp_kosdaq)
 
             all_stocks = pd.concat([df_kospi, df_kosdaq], ignore_index=True)
