@@ -21,7 +21,7 @@ def get_krx_merged_basic_info(date):
     kospi_url = "https://data-dbg.krx.co.kr/svc/apis/sto/stk/stk_isu_base_info.json"
     kosdaq_url = "https://data-dbg.krx.co.kr/svc/apis/sto/ksq/ksq_isu_base_info.json"
 
-    params = {"basDt": date}
+    params = {"basDd": date}
     df_kospi = requests.get(kospi_url, params=params, headers=KRX_HEADERS).json().get("OutBlock_1", [])
     df_kosdaq = requests.get(kosdaq_url, params=params, headers=KRX_HEADERS).json().get("OutBlock_1", [])
 
@@ -31,7 +31,7 @@ def get_krx_merged_basic_info(date):
 # 일별 시세
 def get_krx_daily_trading_info(date):
     url = "https://data-dbg.krx.co.kr/svc/apis/sto/sto/stk_bydd_trd.json"
-    params = {"basDt": date}
+    params = {"basDd": date}
     df = requests.get(url, params=params, headers=KRX_HEADERS).json().get("OutBlock_1", [])
     return pd.DataFrame(df)
 
