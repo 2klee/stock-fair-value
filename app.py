@@ -26,11 +26,15 @@ def get_financials(corp_code, year):
         "corp_code": corp_code,
         "bsns_year": year,
         "reprt_code": "11011",  # 사업보고서
-        "fs_div": "CFS"
+        "fs_div": "CFS"         # 연결재무제표
     }
     r = requests.get(url, params=params).json()
-    df = pd.DataFrame(r['list'])
-    return df
+
+    if r.get("status") != "013" and "list" in r:
+        return pd.DataFrame(r["list"])
+    else:
+        st.warning(f"{year}년 재무제표를 찾을 수 없습니다. (message: {r.get('message', '')})")
+        return pd.DataFrame([])  # 빈 DataFrame 반환
 
 def extract_item(df, item):
     f = df[df['account_nm'] == item]
