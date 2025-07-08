@@ -1,87 +1,87 @@
 import streamlit as st
-import requests
 import pandas as pd
-from datetime import datetime
+import requests
+import zipfile
+import io
 
-# 🔑 인증키
-API_KEY = st.secrets["AUTH_KEY"]
+# 환경변수에서 API 키 불러오기
+DART_API_KEY = st.secrets["DART_API_KEY"]
+KRX_API_KEY = st.secrets["KRX_API_KEY"]
 
-# ✅ 종목 리스트 가져오기 (코스피 + 코스닥)
-def fetch_stock_list():
-    def get_market_data(api_id):
-        url = f"https://data-dbg.krx.co.kr/svc/apis/sto/{api_id}.json"
-        params = {
-            "serviceKey": API_KEY,
-            "resultType": "json",
-            "pageNo": "1",
-            "numOfRows": "1000"
-        }
-        res = requests.get(url, params=params)
-        if res.status_code == 200:
-            return res.json().get("response", {}).get("body", {}).get("items", [])
-        else:
-            return []
+@st.cache_data
+def get_corp_code(company_name):
+    url = f"https://opendart.fss.or.kr/api/corpCode.xml?crtfc_key={DART_API_KEY}"
+    res = requests.get(url)
+    zf = zipfile.ZipFile(io.BytesIO(res.content))
+    xml_data = zf.read("CORPCODE.xml")
+    df = pd.read_xml(xml_data)
+    row = df[df['corp_name'].str.contains(company_name)]
+    return row.iloc[0]['corp_code'] if not row.empty else None
 
-    kospi = get_market_data("stk_isu_base_info")
-    kosdaq = get_market_data("ksq_isu_base_info")
-    return kospi + kosdaq
-
-# ✅ 이름 또는 코드로 종목 검색하기
-def find_isin_by_input(stock_list, user_input):
-    user_input = user_input.strip().lower()
-    for item in stock_list:
-        if user_input in item.get("itmsNm", "").lower() or user_input in item.get("srtnCd", "").lower():
-            return item.get("isuCd"), item.get("itmsNm"), item.get("srtnCd")
-    return None, None, None
-
-# ✅ 종목 시세 정보 불러오기 (전일종가, 시가총액 등)
-def get_stock_info_by_isin(isin):
-    url = "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd.json"
-    today = datetime.today().strftime("%Y%m%d")
+@st.cache_data
+def get_financials(corp_code, year):
+    url = f"https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json"
     params = {
-        "serviceKey": API_KEY,
-        "resultType": "json",
-        "basDd": today,
-        "isuCd": isin
+        "crtfc_key": DART_API_KEY,
+        "corp_code": corp_code,
+        "bsns_year": year,
+        "reprt_code": "11011",  # 사업보고서
+        "fs_div": "CFS"
     }
-    res = requests.get(url, params=params)
-    if res.status_code == 200:
-        items = res.json().get("response", {}).get("body", {}).get("items", [])
-        return items[0] if items else None
-    return None
+    r = requests.get(url, params=params).json()
+    df = pd.DataFrame(r['list'])
+    return df
 
-# ✅ 적정주가 계산 로직 (예시)
-def calculate_fair_value(eps, target_per):
-    try:
-        return float(eps) * float(target_per)
-    except:
-        return None
+def extract_item(df, item):
+    f = df[df['account_nm'] == item]
+    if f.empty: return 0
+    return int(f.iloc[0]['thstrm_amount'].replace(',', ''))
 
-# ✅ Streamlit UI 구성
-st.set_page_config(page_title="KRX 종목 적정주가 계산기", layout="centered")
-st.title("📊 KRX 종목 적정주가 계산기")
+def calculate_fair_price(data):
+    net_income_y1, net_income_y0, revenue_y1, revenue_y0, equity, debt, shares, per_avg, growth_weight, stability_score = data
 
-user_input = st.text_input("종목명 또는 코드 입력", "")
-if st.button("조회하기"):
-    with st.spinner("데이터를 조회 중입니다..."):
-        stock_list = fetch_stock_list()
-        isin, name, code = find_isin_by_input(stock_list, user_input)
+    eps = net_income_y1 / shares if shares else 0
+    roe = (net_income_y1 / equity) * 100 if equity else 0
+    revenue_growth = ((revenue_y1 - revenue_y0) / revenue_y0) * 100 if revenue_y0 else 0
+    eps_growth = ((net_income_y1 - net_income_y0) / abs(net_income_y0)) * 100 if net_income_y0 else 0
+    peg_adj = per_avg / eps_growth if eps_growth != 0 else 0
+    debt_ratio = (debt / (equity + debt)) * 100 if (equity + debt) else 0
+    stability_score = max(0, 100 - debt_ratio)
 
-        if not isin:
-            st.error("📛 해당 종목을 찾을 수 없습니다. 정확한 이름이나 코드를 입력해 주세요.")
-        else:
-            st.success(f"✅ 종목명: {name}, 종목코드: {code}, ISIN: {isin}")
-            info = get_stock_info_by_isin(isin)
-            if info:
-                st.subheader("📈 시세 정보")
-                st.write(info)
-                
-                eps = st.number_input("EPS (주당순이익)", value=3000.0)
-                per = st.number_input("적정 PER (주가수익비율)", value=10.0)
-                fair_price = calculate_fair_value(eps, per)
-                if fair_price:
-                    st.metric(label="📌 계산된 적정주가", value=f"{fair_price:,.0f} 원")
-                else:
-                    st.warning("EPS 또는 PER 입력이 잘못되었습니다.")
-            else:
-                st.warning("🚨 시세 정보를 불러오지 못했습니다.")
+    price = eps * (per_avg + peg_adj + growth_weight) * (roe * 0.01 + revenue_growth * 0.01) * (stability_score / 100)
+    return round(price, 2), round(eps, 2), round(roe, 2), round(revenue_growth, 2), round(stability_score, 2)
+
+st.title("📊 복합 적정주가 자동 계산기")
+
+company = st.text_input("종목명 입력 (예: 삼성전자)")
+per_avg = st.slider("PER 평균", 5, 30, 10)
+growth_weight = st.slider("성장가중치", 0.0, 2.0, 1.0)
+
+if st.button("계산 시작"):
+    corp_code = get_corp_code(company)
+    if not corp_code:
+        st.error("종목명을 찾을 수 없습니다.")
+    else:
+        st.info("DART에서 재무정보 수집 중...")
+        df1 = get_financials(corp_code, 2023)
+        df0 = get_financials(corp_code, 2022)
+
+        net_income_y1 = extract_item(df1, "당기순이익")
+        net_income_y0 = extract_item(df0, "당기순이익")
+        revenue_y1 = extract_item(df1, "매출액")
+        revenue_y0 = extract_item(df0, "매출액")
+        equity = extract_item(df1, "자본총계")
+        debt = extract_item(df1, "부채총계")
+
+        # 예시: 상장주식수 (실제는 KRX 연동 필요)
+        shares = 6000000000
+
+        result = calculate_fair_price(
+            [net_income_y1, net_income_y0, revenue_y1, revenue_y0, equity, debt, shares, per_avg, growth_weight, 0]
+        )
+
+        fair_price, eps, roe, rev_growth, stability = result
+
+        st.success(f"📌 EPS: {eps:.2f} 원")
+        st.success(f"📈 적정주가: {fair_price:.2f} 원")
+        st.caption(f"ROE: {roe:.2f}%, 매출 성장률: {rev_growth:.2f}%, 안정성 점수: {stability}")
