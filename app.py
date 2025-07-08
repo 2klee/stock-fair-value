@@ -12,14 +12,22 @@ KRX_API_KEY = st.secrets["KRX_API_KEY"]
 KRX_BASE = "http://data-dbg.krx.co.kr/svc/apis/sto"
 DART_BASE = "https://opendart.fss.or.kr/api"
 
+# 공통 헤더 (KRX API 우회용)
+KRX_HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Referer": "http://data.krx.co.kr",
+    "Accept": "application/json",
+    "Content-Type": "application/json"
+}
+
 def get_krx_basic_info(date):
     url = f"{KRX_BASE}/stk_isu_base_info.json"
-    res = requests.get(url, params={"basDd": date})
+    res = requests.get(url, params={"basDd": date}, headers=KRX_HEADERS)
     return pd.DataFrame(res.json().get("OutBlock_1", []))
 
 def get_krx_daily_info(date):
     url = f"{KRX_BASE}/stk_bydd_trd.json"
-    res = requests.get(url, params={"basDd": date})
+    res = requests.get(url, params={"basDd": date}, headers=KRX_HEADERS)
     return pd.DataFrame(res.json().get("OutBlock_1", []))
 
 def get_dart_financials(corp_code, year):
