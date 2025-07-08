@@ -1,16 +1,18 @@
 import streamlit as st
-import pandas as pd
 import requests
+import pandas as pd
+from datetime import datetime
 import zipfile
 import io
 
-# 환경변수에서 API 키 불러오기
+# ✅ DART & KRX API KEY 입력
 DART_API_KEY = st.secrets["DART_API_KEY"]
 KRX_API_KEY = st.secrets["KRX_API_KEY"]
 
-@st.cache_data
+# ✅ DART: 회사명 → corp_code
+@st.cache_data(show_spinner=False)
 def get_corp_code(company_name):
-    url = f"https://opendart.fss.or.kr/api/corpCode.xml?crtfc_key={DART_API_KEY}"
+    url = "https://opendart.fss.or.kr/api/corpCode.xml"
     res = requests.get(url)
     zf = zipfile.ZipFile(io.BytesIO(res.content))
     xml_data = zf.read("CORPCODE.xml")
@@ -18,7 +20,8 @@ def get_corp_code(company_name):
     row = df[df['corp_name'].str.contains(company_name)]
     return row.iloc[0]['corp_code'] if not row.empty else None
 
-@st.cache_data
+# ✅ DART: 재무제표 조회
+@st.cache_data(show_spinner=False)
 def get_financials(corp_code, year):
     url = "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json"
     params = {
@@ -26,80 +29,102 @@ def get_financials(corp_code, year):
         "corp_code": corp_code,
         "bsns_year": year,
         "reprt_code": "11011",  # 사업보고서
-        "fs_div": "CFS"         # 연결재무제표
+        "fs_div": "CFS"         # 연결
     }
     r = requests.get(url, params=params).json()
-    
-    # 디버깅용 출력
-    st.write(f"DART API 응답 ({year}년):", r)
-    
-    if r.get("status") == "013":
-        st.warning(f"{year}년 재무제표를 찾을 수 없습니다. (message: {r.get('message', '')})")
+    if r.get("status") == "013" or "list" not in r:
         return pd.DataFrame([])
-    
-    if "list" in r:
-        return pd.DataFrame(r["list"])
-    else:
-        st.warning(f"{year}년 재무제표 데이터가 없습니다. (message: {r.get('message', '')})")
-        return pd.DataFrame([])
+    return pd.DataFrame(r["list"])
 
+# ✅ 특정 항목 추출
+def extract_item(df, keywords):
+    if df.empty: return 0
+    for k in keywords:
+        row = df[df["account_nm"].str.contains(k)]
+        if not row.empty:
+            val = row.iloc[0]["thstrm_amount"]
+            try:
+                return int(str(val).replace(',', ''))
+            except:
+                return 0
+    return 0
 
-def extract_item(df, item):
-    if df.empty:
-        return 0
-    f = df[df['account_nm'] == item]
-    if f.empty:
-        return 0
-    return int(f.iloc[0]['thstrm_amount'].replace(',', ''))
+# ✅ KRX: 주가, 상장주식수 불러오기
+@st.cache_data(show_spinner=False)
+def get_krx_stock_info(stock_name):
+    url = f"http://openapi.krx.co.kr/contents/COM/GenerateOTP.jspx"
+    params = {
+        "bld": "dbms/MDC/STAT/standard/MDCSTAT01901",  # 개별종목 시세
+        "name": "form",
+        "mktId": "ALL",
+        "share": "1",
+        "url": "MDCSTAT01901",
+        "searchType": "1"
+    }
+    otp = requests.get(url, params=params).text
+    download_url = "http://file.krx.co.kr/download.jspx"
+    r = requests.post(download_url, data={"code": otp}, headers={"Referer": url})
+    df = pd.read_csv(io.StringIO(r.content.decode("EUC-KR")))
 
-def calculate_fair_price(data):
-    net_income_y1, net_income_y0, revenue_y1, revenue_y0, equity, debt, shares, per_avg, growth_weight, stability_score = data
+    row = df[df['종목명'].str.strip() == stock_name.strip()]
+    if row.empty:
+        return None, None
+    price = int(str(row.iloc[0]['현재가']).replace(",", ""))
+    shares = int(str(row.iloc[0]['상장주식수']).replace(",", ""))
+    return price, shares
 
-    eps = net_income_y1 / shares if shares else 0
-    roe = (net_income_y1 / equity) * 100 if equity else 0
-    revenue_growth = ((revenue_y1 - revenue_y0) / revenue_y0) * 100 if revenue_y0 else 0
-    eps_growth = ((net_income_y1 - net_income_y0) / abs(net_income_y0)) * 100 if net_income_y0 else 0
-    peg_adj = per_avg / eps_growth if eps_growth != 0 else 0
-    debt_ratio = (debt / (equity + debt)) * 100 if (equity + debt) else 0
-    stability_score = max(0, 100 - debt_ratio)
+# ✅ Streamlit UI
+st.title("📊 KRX + DART 기반 적정주가 계산기")
 
-    price = eps * (per_avg + peg_adj + growth_weight) * (roe * 0.01 + revenue_growth * 0.01) * (stability_score / 100)
-    return round(price, 2), round(eps, 2), round(roe, 2), round(revenue_growth, 2), round(stability_score, 2)
-
-st.title("📊 복합 적정주가 자동 계산기")
-
-company = st.text_input("종목명 입력 (예: 삼성전자)")
-per_avg = st.slider("PER 평균", 5, 30, 10)
+company_name = st.text_input("종목명 (예: 삼성전자)", "삼성전자")
 growth_weight = st.slider("성장가중치", 0.0, 2.0, 1.0)
 
 if st.button("계산 시작"):
-    corp_code = get_corp_code(company)
-    st.write("corp_code:", corp_code)  # 여기에 출력문 넣기
+    with st.spinner("KRX & DART 데이터 수집 중..."):
+        price, shares = get_krx_stock_info(company_name)
+        corp_code = get_corp_code(company_name)
+        now = datetime.now()
+        y1, y2 = now.year - 1, now.year - 2
+        df1 = get_financials(corp_code, y1)
+        df0 = get_financials(corp_code, y2)
+
     if not corp_code:
-        st.error("종목명을 찾을 수 없습니다.")
+        st.error("📛 DART에서 기업코드를 찾을 수 없습니다.")
+    elif price is None or shares is None:
+        st.error("📛 KRX에서 주가 또는 상장주식수를 찾을 수 없습니다.")
+    elif df1.empty or df0.empty:
+        st.error("📛 DART 재무제표 조회 실패")
     else:
-        st.info("DART에서 재무정보 수집 중...")
-        df1 = get_financials(corp_code, 2023)
-        st.write(df1.head())
-        st.write("계정명 리스트:", df1['account_nm'].unique())
-        df0 = get_financials(corp_code, 2022)
+        st.success("✅ 데이터 수집 완료")
 
-        net_income_y1 = extract_item(df1, "당기순이익")
-        net_income_y0 = extract_item(df0, "당기순이익")
-        revenue_y1 = extract_item(df1, "매출액")
-        revenue_y0 = extract_item(df0, "매출액")
-        equity = extract_item(df1, "자본총계")
-        debt = extract_item(df1, "부채총계")
+        # 항목 추출
+        net_income = extract_item(df1, ["당기순이익", "지배"])
+        net_income_prev = extract_item(df0, ["당기순이익", "지배"])
+        sales = extract_item(df1, ["매출", "수익"])
+        sales_prev = extract_item(df0, ["매출", "수익"])
+        equity = extract_item(df1, ["자본총계"])
+        debt = extract_item(df1, ["부채총계"])
 
-        # 예시: 상장주식수 (실제는 KRX 연동 필요)
-        shares = 6000000000
+        eps = net_income / shares if shares else 0
+        eps_prev = net_income_prev / shares if shares else 0
+        per = price / eps if eps else 0
+        eps_growth = (eps - eps_prev) / eps_prev if eps_prev else 0
+        peg = per / eps_growth if eps_growth else per
+        roe = net_income / equity if equity else 0
+        sales_growth = (sales - sales_prev) / sales_prev if sales_prev else 0
+        debt_ratio = (debt / equity * 100) if equity else 0
+        stability_score = max(0, 100 - debt_ratio)
 
-        result = calculate_fair_price(
-            [net_income_y1, net_income_y0, revenue_y1, revenue_y0, equity, debt, shares, per_avg, growth_weight, 0]
-        )
+        fair_price = eps * (per + peg + growth_weight) * (roe + sales_growth) * (stability_score / 100)
 
-        fair_price, eps, roe, rev_growth, stability = result
-
-        st.success(f"📌 EPS: {eps:.2f} 원")
-        st.success(f"📈 적정주가: {fair_price:.2f} 원")
-        st.caption(f"ROE: {roe:.2f}%, 매출 성장률: {rev_growth:.2f}%, 안정성 점수: {stability}")
+        # 결과 출력
+        st.subheader("📈 계산 결과")
+        st.write(f"현재 주가: {price:,}원")
+        st.write(f"EPS: {eps:.2f}원")
+        st.write(f"PER: {per:.2f}")
+        st.write(f"PEG: {peg:.2f}")
+        st.write(f"ROE: {roe:.2%}")
+        st.write(f"매출 성장률: {sales_growth:.2%}")
+        st.write(f"부채비율: {debt_ratio:.2f}%")
+        st.write(f"안정성 점수: {stability_score:.2f}")
+        st.markdown(f"### 💵 적정주가: `{fair_price:,.0f} 원`")
