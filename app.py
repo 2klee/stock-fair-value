@@ -52,23 +52,38 @@ def extract_item(df, keywords):
 # ✅ KRX: 주가, 상장주식수 불러오기
 @st.cache_data(show_spinner=False)
 def get_krx_stock_info(stock_name):
-    url = f"http://openapi.krx.co.kr/contents/COM/GenerateOTP.jspx"
-    params = {
-        "bld": "dbms/MDC/STAT/standard/MDCSTAT01901",  # 개별종목 시세
-        "name": "form",
+    # OTP 생성
+    otp_url = "http://data.krx.co.kr/comm/fileDn/GenerateOTP/generate.cmd"
+    otp_params = {
         "mktId": "ALL",
-        "share": "1",
-        "url": "MDCSTAT01901",
-        "searchType": "1"
+        "trdDd": datetime.today().strftime("%Y%m%d"),
+        "money": "1",
+        "csvxls_isNo": "false",
+        "name": "fileDown",
+        "url": "dbms/MDC/STAT/standard/MDCSTAT01901"
     }
-    otp = requests.get(url, params=params).text
-    download_url = "http://file.krx.co.kr/download.jspx"
-    r = requests.post(download_url, data={"code": otp}, headers={"Referer": url})
-    df = pd.read_csv(io.StringIO(r.content.decode("EUC-KR")))
+    otp_headers = {
+        "Referer": "http://data.krx.co.kr/contents/MDC/MDI/mdiLoader"
+    }
+    otp_res = requests.post(otp_url, data=otp_params, headers=otp_headers)
+    otp_code = otp_res.text
 
+    # CSV 다운로드
+    download_url = "http://data.krx.co.kr/comm/fileDn/download_csv/download.cmd"
+    download_res = requests.post(download_url, data={"code": otp_code}, headers=otp_headers)
+
+    # 디코딩 시도
+    try:
+        df = pd.read_csv(io.StringIO(download_res.content.decode("EUC-KR")))
+    except UnicodeDecodeError:
+        st.error("📛 KRX CSV 파일을 EUC-KR로 디코딩할 수 없습니다.")
+        return None, None
+
+    # 종목 검색
     row = df[df['종목명'].str.strip() == stock_name.strip()]
     if row.empty:
         return None, None
+
     price = int(str(row.iloc[0]['현재가']).replace(",", ""))
     shares = int(str(row.iloc[0]['상장주식수']).replace(",", ""))
     return price, shares
