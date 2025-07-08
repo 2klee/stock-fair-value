@@ -21,6 +21,7 @@ def get_corp_code(company_name):
 # === KRX 공식 OpenAPI 종목 리스트 조회 ===
 @st.cache_data(show_spinner=False)
 def get_krx_stock_list(market="STK"):  # STK=코스피, KSQ=코스닥
+    st.write("KRX API 반환 컬럼명:", krx_df.columns)
     url = "http://openapi.krx.co.kr/openapi/contents/Stock/StockInfo"
     params = {
         "authKey": KRX_API_KEY,
@@ -79,8 +80,6 @@ if st.button("계산 시작"):
 
     with st.spinner("KRX 종목정보 조회 중..."):
         krx_df = get_krx_stock_list(market=market_code)
-
-    st.write(krx_df.columns)
 
     stock_row = krx_df[krx_df['isuKorNm'] == stock_name]
     if stock_row.empty:
