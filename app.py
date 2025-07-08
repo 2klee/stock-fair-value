@@ -3,19 +3,21 @@ import pandas as pd
 import requests
 from datetime import datetime, timedelta
 
-# 인증키 (Streamlit secrets에 저장했다고 가정)
+# 인증키 (Streamlit secrets에 저장)
 KRX_API_KEY = st.secrets["KRX_API_KEY"]
 
-API_URL = "http://data-dbg.krx.co.kr/svc/apis/sto/stk_isu_base_info"
+# 코스피, 코스닥 API URL
+KOSPI_API_URL = "http://data-dbg.krx.co.kr/svc/apis/sto/stk_isu_base_info"
+KOSDAQ_API_URL = "http://data-dbg.krx.co.kr/svc/apis/sto/ksq_isu_base_info"
 
-def get_krx_stock_info(basDd):
+def fetch_krx_data(api_url, basDd):
     headers = {
-        "AUTH_KEY": KRX_API_KEY  # 인증키를 헤더에 넣기
+        "AUTH_KEY": KRX_API_KEY
     }
     params = {
         "basDd": basDd
     }
-    response = requests.get(API_URL, headers=headers, params=params)
+    response = requests.get(api_url, headers=headers, params=params)
     response.raise_for_status()
     data = response.json()
     return pd.DataFrame(data.get("OutBlock_1", []))
@@ -26,33 +28,41 @@ def search_stock(df, query):
         (df["ISU_SRT_CD"].str.upper() == query) |
         (df["ISU_NM"].str.contains(query, case=False))
     ]
-    if match.empty:
-        raise ValueError("해당 종목을 찾을 수 없습니다.")
-    row = match.iloc[0]
-    return {
-        "종목명": row["ISU_NM"],
-        "종목코드": row["ISU_SRT_CD"],
-        "상장주식수": int(row["LIST_SHRS"].replace(",", ""))
-    }
+    return match
 
-# Streamlit UI
-st.title("📈 KRX API - 종목 조회기 (data-dbg.krx.co.kr)")
+st.title("📈 KRX 코스피/코스닥 종목 조회기")
 
-# 어제 날짜 계산
+# 어제 날짜 기본값 설정
 yesterday = datetime.today() - timedelta(days=1)
-
-# 기준일자 입력 (기본값 어제)
 base_date = st.date_input("기준일자", yesterday).strftime("%Y%m%d")
 user_input = st.text_input("종목명 또는 종목코드 입력 (예: 삼성전자 또는 005930)")
 
 if user_input:
-    with st.spinner("KRX API에서 데이터 조회 중..."):
+    with st.spinner("KRX API에서 코스피/코스닥 데이터 조회 중..."):
         try:
-            df = get_krx_stock_info(base_date)
-            result = search_stock(df, user_input)
-            st.success("✅ 조회 성공")
-            st.write(f"**종목명:** {result['종목명']}")
-            st.write(f"**종목코드:** {result['종목코드']}")
-            st.write(f"**상장주식수:** {result['상장주식수']:,} 주")
+            # 코스피, 코스닥 데이터 가져오기
+            kospi_df = fetch_krx_data(KOSPI_API_URL, base_date)
+            kosdaq_df = fetch_krx_data(KOSDAQ_API_URL, base_date)
+
+            # 검색
+            kospi_match = search_stock(kospi_df, user_input)
+            kosdaq_match = search_stock(kosdaq_df, user_input)
+
+            if not kospi_match.empty:
+                row = kospi_match.iloc[0]
+                st.success("✅ 코스피 종목 조회 성공")
+                st.write(f"**시장:** 코스피")
+                st.write(f"**종목명:** {row['ISU_NM']}")
+                st.write(f"**종목코드:** {row['ISU_SRT_CD']}")
+                st.write(f"**상장주식수:** {int(row['LIST_SHRS'].replace(',', '')):,} 주")
+            elif not kosdaq_match.empty:
+                row = kosdaq_match.iloc[0]
+                st.success("✅ 코스닥 종목 조회 성공")
+                st.write(f"**시장:** 코스닥")
+                st.write(f"**종목명:** {row['ISU_NM']}")
+                st.write(f"**종목코드:** {row['ISU_SRT_CD']}")
+                st.write(f"**상장주식수:** {int(row['LIST_SHRS'].replace(',', '')):,} 주")
+            else:
+                st.warning("❌ 입력한 종목을 찾을 수 없습니다.")
         except Exception as e:
             st.error(f"❌ 오류 발생: {e}")
