@@ -3,14 +3,14 @@ import pandas as pd
 import requests
 from datetime import datetime
 
-# 인증키 (streamlit secrets에 저장)
+# 인증키 (Streamlit secrets에 저장했다고 가정)
 KRX_API_KEY = st.secrets["KRX_API_KEY"]
 
-API_URL = "https://openapi.krx.co.kr/svc/sample/apis/sto/stk_isu_base_info"
+API_URL = "http://data-dbg.krx.co.kr/svc/apis/sto/stk_isu_base_info"
 
 def get_krx_stock_info(basDd):
     headers = {
-        "AUTH_KEY": KRX_API_KEY
+        "AUTH_KEY": KRX_API_KEY  # 인증키를 헤더에 넣기
     }
     params = {
         "basDd": basDd
@@ -36,13 +36,13 @@ def search_stock(df, query):
     }
 
 # Streamlit UI
-st.title("📈 KRX 공식 OpenAPI 종목 조회기")
+st.title("📈 KRX API - 종목 조회기 (data-dbg.krx.co.kr)")
 
 user_input = st.text_input("종목명 또는 종목코드 입력 (예: 삼성전자 또는 005930)")
 base_date = st.date_input("기준일자", datetime.today()).strftime("%Y%m%d")
 
 if user_input:
-    with st.spinner("KRX OpenAPI에서 데이터 조회 중..."):
+    with st.spinner("KRX API에서 데이터 조회 중..."):
         try:
             df = get_krx_stock_info(base_date)
             result = search_stock(df, user_input)
