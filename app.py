@@ -80,6 +80,8 @@ if st.button("계산 시작"):
     with st.spinner("KRX 종목정보 조회 중..."):
         krx_df = get_krx_stock_list(market=market_code)
 
+    st.write(krx_df.columns)
+
     stock_row = krx_df[krx_df['isuKorNm'] == stock_name]
     if stock_row.empty:
         st.error("해당 종목을 찾을 수 없습니다.")
