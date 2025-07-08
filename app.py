@@ -70,11 +70,14 @@ growth_weight = st.slider("성장가중치", 0.0, 2.0, 1.0)
 
 if st.button("계산 시작"):
     corp_code = get_corp_code(company)
+    st.write("corp_code:", corp_code)  # 여기에 출력문 넣기
     if not corp_code:
         st.error("종목명을 찾을 수 없습니다.")
     else:
         st.info("DART에서 재무정보 수집 중...")
         df1 = get_financials(corp_code, 2023)
+        st.write(df1.head())
+        st.write("계정명 리스트:", df1['account_nm'].unique())
         df0 = get_financials(corp_code, 2022)
 
         net_income_y1 = extract_item(df1, "당기순이익")
