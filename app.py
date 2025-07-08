@@ -7,6 +7,7 @@ import io
 
 # API 키 세팅 (본인 키로 교체)
 DART_API_KEY = st.secrets["DART_API_KEY"]
+KRX_API_KEY = st.secrets["KRX_API_KEY"]
 
 # DART corp_code 조회
 @st.cache_data(show_spinner=False)
