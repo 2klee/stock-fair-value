@@ -78,10 +78,14 @@ def extract_financial_items(financial_list):
         result[key] = value
     return result
 
-def find_financial_value(fin_map, keyword):
+def find_financial_value(fin_map, keyword, exact_match=False):
     for key, val in fin_map.items():
-        if keyword in key and val is not None:
-            return val
+        if exact_match:
+            if keyword == key and val is not None:
+                return val
+        else:
+            if keyword in key and val is not None:
+                return val
     return None
 
 def calculate_eps(net_income, stock_shares):
@@ -144,10 +148,8 @@ if selected_label:
         st.stop()
 
     this_year = datetime.today().year
-    last_year = this_year - 1
-
-    fin_list_last = fetch_dart_financial_data(corp_code, last_year)
-    fin_list_prev = fetch_dart_financial_data(corp_code, last_year - 1)
+    fin_list_last = fetch_dart_financial_data(corp_code, this_year)
+    fin_list_prev = fetch_dart_financial_data(corp_code, this_year - 1)
 
     if fin_list_last is None:
         st.error("최근 연도 재무데이터를 불러올 수 없습니다.")
@@ -156,16 +158,13 @@ if selected_label:
     fin_map_last = extract_financial_items(fin_list_last)
     fin_map_prev = extract_financial_items(fin_list_prev) if fin_list_prev else {}
 
-    st.write("📄 DART 재무 계정명 목록:")
-    st.write(list(fin_map_last.keys()))
-
-    net_income = find_financial_value(fin_map_last, "지배주주귀속순이익") or find_financial_value(fin_map_last, "당기순이익")
-    equity = find_financial_value(fin_map_last, "자본총계")
+    net_income = (
+        find_financial_value(fin_map_last, "지배주주귀속순이익", exact_match=True)
+        or find_financial_value(fin_map_last, "당기순이익", exact_match=True)
+    )
+    equity = find_financial_value(fin_map_last, "자본총계", exact_match=True)
     sales_last = find_financial_value(fin_map_last, "매출")
     sales_prev = find_financial_value(fin_map_prev, "매출")
-
-    st.write(f"🔢 net_income: {net_income}")
-    st.write(f"🔢 stock_shares: {stock_shares}")
 
     EPS = calculate_eps(net_income, stock_shares)
     ROE = calculate_roe(net_income, equity)
