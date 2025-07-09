@@ -148,7 +148,6 @@ if selected_label:
 
     if corp_code is None:
         st.error(f"DART 기업코드 매핑 실패: KRX 종목코드 '{stock_code}'가 DART DB에 없습니다.\n수동으로 입력하세요.")
-        EPS = st.number_input("EPS (주당순이익)", value=0.0, step=0.01)
         per_avg = st.number_input("PER 평균", min_value=0.0, value=10.0, step=0.1)
         peg_adj = st.number_input("PEG 조정치", value=0.0, step=0.1)
         growth_weight = st.number_input("성장가중치", value=0.0, step=0.1)
@@ -157,6 +156,8 @@ if selected_label:
         stability_score = st.number_input("안정성 점수 (0~100)", min_value=0, max_value=100, value=80)
         if st.button("적정주가 계산 (수동입력)"):
             try:
+                # EPS, ROE 입력구간 없으니 0으로 처리하거나 직접 변수 정의
+                EPS = 0.0
                 fair_price = calculate_fair_price(
                     EPS, per_avg, peg_adj, growth_weight, roe_adj, sales_growth_adj, stability_score
                 )
@@ -187,11 +188,6 @@ if selected_label:
     st.write(f"- ROE (자기자본이익률 %): {ROE if ROE is not None else '데이터 없음'}")
     st.write(f"- 매출 성장률 (%): {sales_growth:.2f}")
 
-    if EPS is None:
-        EPS = st.number_input("EPS (주당순이익)", value=0.0, step=0.01)
-    if ROE is None:
-        ROE = st.number_input("ROE (자기자본이익률 %)", value=0.0, step=0.01)
-
     st.write("---")
     st.subheader("적정주가 계산을 위한 추가 입력값")
 
@@ -204,7 +200,7 @@ if selected_label:
 
     if st.button("적정주가 계산"):
         try:
-            EPS_val = float(EPS)
+            EPS_val = float(EPS) if EPS is not None else 0.0
             fair_price = calculate_fair_price(
                 EPS=EPS_val,
                 per_avg=per_avg,
