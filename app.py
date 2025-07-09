@@ -15,7 +15,6 @@ KOSPI_API_URL = "http://data-dbg.krx.co.kr/svc/apis/sto/stk_isu_base_info"
 KOSDAQ_API_URL = "http://data-dbg.krx.co.kr/svc/apis/sto/ksq_isu_base_info"
 
 # --- 헬퍼 함수들 ---
-
 def fetch_krx_data(api_url, basDd):
     headers = {"AUTH_KEY": KRX_API_KEY}
     params = {"basDd": basDd}
@@ -79,13 +78,11 @@ def extract_financial_items(financial_list):
         result[key] = value
     return result
 
-def calculate_fair_price(eps, per_avg, peg_adj, growth_weight, roe_adj, sales_growth_adj, stability_score):
-    base = eps * (per_avg + peg_adj + growth_weight)
-    modifier = roe_adj + sales_growth_adj
-    price = base * modifier * (stability_score / 100)
-    return price
-
-# --- 자동 계산 함수 ---
+def find_financial_value(fin_map, keyword):
+    for key, val in fin_map.items():
+        if keyword in key and val is not None:
+            return val
+    return None
 
 def calculate_eps(net_income, stock_shares):
     if net_income is None or stock_shares == 0:
@@ -102,9 +99,14 @@ def calculate_sales_growth(sales_last, sales_prev):
         return 0.0
     return (sales_last - sales_prev) / sales_prev * 100
 
-# --- Streamlit UI ---
+def calculate_fair_price(eps, per_avg, peg_adj, growth_weight, roe_adj, sales_growth_adj, stability_score):
+    base = eps * (per_avg + peg_adj + growth_weight)
+    modifier = roe_adj + sales_growth_adj
+    price = base * modifier * (stability_score / 100)
+    return price
 
-st.title("📊 KRX + DART 기반 자동 EPS/ROE/매출성장률 및 적정주가 계산기")
+# --- Streamlit UI ---
+st.title("📊 KRX + DART 기반 적정주가 자동 계산기")
 
 yesterday = datetime.today() - timedelta(days=1)
 base_date = st.date_input("KRX 기준일자", yesterday).strftime("%Y%m%d")
@@ -127,10 +129,9 @@ if selected_label:
     st.write(f"### 선택 종목: {selected_row['ISU_NM_CLEAN']} ({selected_row['ISU_SRT_CD']})")
     st.write(f"시장구분: {'코스피' if selected_row['MKT_TP_NM']=='KOSPI' else '코스닥'}")
 
-    # 상장주식수 정수형 변환
     try:
         stock_shares = int(selected_row['LIST_SHRS'].replace(',', ''))
-    except Exception:
+    except:
         stock_shares = 0
     st.write(f"상장주식수: {stock_shares:,} 주")
 
@@ -139,7 +140,7 @@ if selected_label:
     corp_code = corp_code_map.get(stock_code) or corp_code_map.get(stock_code.lstrip("0"))
 
     if corp_code is None:
-        st.error(f"DART 기업코드 매핑 실패: KRX 종목코드 '{stock_code}'가 DART DB에 없습니다.")
+        st.error(f"DART 기업코드 매핑 실패: 종목코드 '{stock_code}'가 DART DB에 없습니다.")
         st.stop()
 
     this_year = datetime.today().year
@@ -155,12 +156,10 @@ if selected_label:
     fin_map_last = extract_financial_items(fin_list_last)
     fin_map_prev = extract_financial_items(fin_list_prev) if fin_list_prev else {}
 
-    # 지배주주귀속순이익 또는 당기순이익 우선 사용
-    net_income = fin_map_last.get("지배주주귀속순이익(손실)") or fin_map_last.get("당기순이익")
-
-    equity = fin_map_last.get("자본총계")
-    sales_last = fin_map_last.get("매출액")
-    sales_prev = fin_map_prev.get("매출액")
+    net_income = find_financial_value(fin_map_last, "지배주주귀속순이익") or find_financial_value(fin_map_last, "당기순이익")
+    equity = find_financial_value(fin_map_last, "자본총계")
+    sales_last = find_financial_value(fin_map_last, "매출")
+    sales_prev = find_financial_value(fin_map_prev, "매출")
 
     EPS = calculate_eps(net_income, stock_shares)
     ROE = calculate_roe(net_income, equity)
@@ -171,9 +170,7 @@ if selected_label:
     st.write(f"- ROE (자기자본이익률 %): {ROE if ROE is not None else '데이터 없음'}")
     st.write(f"- 매출 성장률 (%): {sales_growth:.2f}")
 
-    st.write("---")
-    st.subheader("적정주가 계산을 위한 추가 입력값")
-
+    st.subheader("📐 적정주가 계산을 위한 입력값")
     per_avg = st.number_input("PER 평균", min_value=0.0, value=10.0, step=0.1)
     peg_adj = st.number_input("PEG 조정치", value=0.0, step=0.1)
     growth_weight = st.number_input("성장가중치", value=0.0, step=0.1)
@@ -183,11 +180,11 @@ if selected_label:
 
     if st.button("적정주가 계산"):
         if EPS is None:
-            st.error("EPS 데이터가 없어 계산할 수 없습니다.")
+            st.error("EPS 데이터가 없어 적정주가를 계산할 수 없습니다.")
         else:
             try:
                 fair_price = calculate_fair_price(
-                    EPS=EPS,
+                    eps=EPS,
                     per_avg=per_avg,
                     peg_adj=peg_adj,
                     growth_weight=growth_weight,
