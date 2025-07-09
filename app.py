@@ -82,12 +82,6 @@ def extract_financial_items(financial_list):
         result[key] = value
     return result
 
-def find_financial_value(fin_map, keyword):
-    for key, val in fin_map.items():
-        if keyword in key and val is not None:
-            return val
-    return None
-
 # --- Streamlit UI ---
 st.title("📊 KRX + DART 기반 재무정보 확인기")
 
@@ -129,13 +123,17 @@ if selected_label:
         st.error("최근 연도 재무데이터를 불러올 수 없습니다.")
         st.stop()
 
-    fin_map = extract_financial_items(fin_list)
-
     net_income = None
-    for key, val in fin_map.items():
-        if "당기순이익" in key and val is not None:
-            net_income = val
-            break
+    for item in fin_list:
+        name = item.get("account_nm", "")
+        account_id = item.get("account_id", "")
+        value = item.get("thstrm_amount", None)
+        if "당기순이익" in name and "비지배" not in name and account_id == "ifrs-full_ProfitLoss":
+            try:
+                net_income = int(value.replace(',', '')) if value else None
+                break
+            except:
+                continue
 
     st.write("### 재무정보")
     if net_income is None:
