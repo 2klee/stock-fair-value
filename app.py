@@ -2,18 +2,17 @@ import streamlit as st
 import pandas as pd
 import requests
 from datetime import datetime, timedelta
+import zipfile
+import xml.etree.ElementTree as ET
+import os
 
-# --- KRX, DART API 인증키 ---
+# --- KRX, DART API 인증키 (Streamlit secrets에서 불러오기) ---
 KRX_API_KEY = st.secrets["KRX_API_KEY"]
 DART_API_KEY = st.secrets["DART_API_KEY"]
 
 # --- KRX API URLs ---
 KOSPI_API_URL = "http://data-dbg.krx.co.kr/svc/apis/sto/stk_isu_base_info"
 KOSDAQ_API_URL = "http://data-dbg.krx.co.kr/svc/apis/sto/ksq_isu_base_info"
-
-# --- DART API URLs ---
-DART_FINANCIAL_URL = "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json"
-DART_CORP_CODE_URL = "https://opendart.fss.or.kr/api/corpCode.xml"
 
 # --- Helper Functions ---
 
@@ -34,18 +33,13 @@ def make_display_label(row):
     name = clean_name(row["ISU_NM"])
     return f"{name} ({row['ISU_SRT_CD']})"
 
-# DART API: CorpCode.xml 다운로드 후 종목코드 -> DART 고유기업코드 변환 함수
-import zipfile
-import xml.etree.ElementTree as ET
-import os
-
+# --- DART 기업코드 매핑 함수 ---
 def get_corp_code_map():
     corp_code_zip = "corp_code.zip"
     corp_code_xml = "CORPCODE.xml"
+    # DART 공시기업코드 XML 파일 없으면 다운로드 및 압축 해제
     if not os.path.exists(corp_code_xml):
-        url = f"https://opendart.fss.or.kr/api/corpCode.xml"
-        params = {"crtfc_key": DART_API_KEY}
-        r = requests.get("https://opendart.fss.or.kr/api/corpCode.xml", params={"crtfc_key":DART_API_KEY})
+        r = requests.get(f"https://opendart.fss.or.kr/api/corpCode.xml?crtfc_key={DART_API_KEY}")
         with open(corp_code_zip, "wb") as f:
             f.write(r.content)
         with zipfile.ZipFile(corp_code_zip, 'r') as zip_ref:
@@ -56,22 +50,19 @@ def get_corp_code_map():
     for corp in root.findall("list"):
         corp_code = corp.find("corp_code").text
         stock_code = corp.find("stock_code").text
-        corp_name = corp.find("corp_name").text
-        if stock_code:
+        # stock_code가 빈 문자열 아닌 경우만 매핑
+        if stock_code and stock_code.strip() != "":
             corp_map[stock_code] = corp_code
     return corp_map
 
-# DART API: 재무제표 가져오기
-def fetch_dart_financial_data(corp_code, year, reprt_code="11011"): 
-    """
-    reprt_code: 11011=사업보고서, 11012=반기보고서, 11013=분기보고서
-    """
+# --- DART 재무제표 조회 함수 ---
+def fetch_dart_financial_data(corp_code, year, reprt_code="11011"):
     params = {
         "crtfc_key": DART_API_KEY,
         "corp_code": corp_code,
         "bsns_year": str(year),
         "reprt_code": reprt_code,
-        "fs_div": "CFS"  # 연결재무제표
+        "fs_div": "CFS"
     }
     resp = requests.get("https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json", params=params)
     data = resp.json()
@@ -81,10 +72,8 @@ def fetch_dart_financial_data(corp_code, year, reprt_code="11011"):
     return data.get("list", [])
 
 def extract_financial_items(financial_list):
-    # 재무 데이터에서 필요한 항목을 추출
     result = {}
     for item in financial_list:
-        # item 예시: {'account_nm': '당기순이익(손실)', 'thstrm_amount': '123456'}
         key = item['account_nm'].strip()
         value = item['thstrm_amount']
         try:
@@ -94,22 +83,21 @@ def extract_financial_items(financial_list):
         result[key] = value
     return result
 
-# 적정주가 계산 함수
+# --- 적정주가 계산 함수 ---
 def calculate_fair_price(eps, per_avg, peg_adj, growth_weight, roe_adj, sales_growth_adj, stability_score):
     base = eps * (per_avg + peg_adj + growth_weight)
     modifier = roe_adj + sales_growth_adj
     price = base * modifier * (stability_score / 100)
     return price
 
-# --- Streamlit UI 시작 ---
+# --- Streamlit UI ---
 
 st.title("📊 KRX + DART 기반 적정주가 계산기")
 
-# 기준일자 설정
+# 기준일자
 yesterday = datetime.today() - timedelta(days=1)
 base_date = st.date_input("KRX 기준일자", yesterday).strftime("%Y%m%d")
 
-# KRX 종목 데이터 로드
 with st.spinner("KRX 보통주 종목 불러오는 중..."):
     try:
         kospi_df = filter_common_stock(fetch_krx_data(KOSPI_API_URL, base_date))
@@ -129,15 +117,37 @@ if selected_label:
     st.write(f"시장구분: {'코스피' if selected_row['MKT_TP_NM']=='KOSPI' else '코스닥'}")
     st.write(f"상장주식수: {int(selected_row['LIST_SHRS'].replace(',', '')):,} 주")
 
-    # DART 기업코드 매핑
     corp_code_map = get_corp_code_map()
-    stock_code = selected_row["ISU_SRT_CD"].lstrip('0')  # 주식코드는 앞 0 제거 필요
+    stock_code = selected_row["ISU_SRT_CD"]
+
+    # 1차: 6자리 그대로 매핑 시도
     corp_code = corp_code_map.get(stock_code)
-    if not corp_code:
-        st.error("DART 기업코드 매핑 실패 (상장코드와 DART 코드 불일치)")
+
+    # 2차: 앞자리 0 제거 후 매핑 시도
+    if corp_code is None:
+        stock_code_trim = stock_code.lstrip("0")
+        corp_code = corp_code_map.get(stock_code_trim)
+
+    if corp_code is None:
+        st.error(f"DART 기업코드 매핑 실패: KRX 종목코드 '{stock_code}'가 DART DB에 없습니다.\n수동으로 EPS 등을 입력해주세요.")
+        EPS = st.number_input("EPS (주당순이익)", value=0.0, step=0.01)
+        per_avg = st.number_input("PER 평균", min_value=0.0, value=10.0, step=0.1)
+        peg_adj = st.number_input("PEG 조정치", value=0.0, step=0.1)
+        growth_weight = st.number_input("성장가중치", value=0.0, step=0.1)
+        roe_adj = st.number_input("ROE 보정계수", value=1.0, step=0.01)
+        sales_growth_adj = st.number_input("매출성장률 보정치", value=0.0, step=0.01)
+        stability_score = st.number_input("안정성 점수 (0~100)", min_value=0, max_value=100, value=80)
+
+        if st.button("적정주가 계산 (수동입력)"):
+            try:
+                fair_price = calculate_fair_price(
+                    EPS, per_avg, peg_adj, growth_weight, roe_adj, sales_growth_adj, stability_score
+                )
+                st.success(f"✅ 계산된 적정주가: {fair_price:,.2f} 원")
+            except Exception as e:
+                st.error(f"계산 중 오류 발생: {e}")
         st.stop()
 
-    # 사업보고서 기준 연도 설정 (작년)
     this_year = datetime.today().year
     last_year = this_year - 1
 
@@ -148,34 +158,20 @@ if selected_label:
 
     fin_data = extract_financial_items(financial_list)
 
-    # 주요 데이터 추출 (키 이름은 공시 양식마다 다르므로 케이스별 처리 필요)
-    EPS = fin_data.get("지배주주귀속순이익(손실) / 주식수(보통주)","")
-    if not EPS:
-        EPS = fin_data.get("주당순이익(지배주주귀속)", None)
-    if not EPS:
-        EPS = fin_data.get("주당순이익", None)
-    # ROE는 따로 계산하거나, 간접적으로 산출 가능
-    ROE = fin_data.get("자기자본이익률(%)", None)
-    # 매출액
-    SALES = fin_data.get("매출액", None)
+    # 주요 재무 데이터 추출
+    EPS = fin_data.get("지배주주귀속순이익(손실) / 주식수(보통주)")
+    if EPS is None:
+        EPS = fin_data.get("주당순이익(지배주주귀속)")
+    if EPS is None:
+        EPS = fin_data.get("주당순이익")
 
-    # 임의로 사용자 입력받기 (PER 평균, PEG 조정치, 성장가중치, ROE 보정계수, 매출성장률 보정치, 안정성 점수)
-    st.write("----")
-    st.subheader("적정주가 계산에 필요한 입력값을 설정하세요")
+    ROE = fin_data.get("자기자본이익률(%)")
+    SALES = fin_data.get("매출액")
 
-    per_avg = st.number_input("PER 평균", min_value=0.0, value=10.0, step=0.1)
-    peg_adj = st.number_input("PEG 조정치", value=0.0, step=0.1)
-    growth_weight = st.number_input("성장가중치", value=0.0, step=0.1)
-    roe_adj = st.number_input("ROE 보정계수", value=1.0, step=0.01)
-    sales_growth_adj = st.number_input("매출성장률 보정치", value=0.0, step=0.01)
-    stability_score = st.number_input("안정성 점수 (0~100)", min_value=0, max_value=100, value=80)
-
-    # 화면에 불러온 재무 데이터 표시
     st.write("### DART 재무정보 (최근 사업보고서)")
     st.write(fin_data)
 
-    if EPS is None or EPS == "":
-        st.warning("EPS 데이터를 불러올 수 없습니다. 수동 입력하세요.")
+    if EPS is None:
         EPS = st.number_input("EPS (주당순이익)", value=0.0, step=0.01)
     else:
         st.write(f"EPS (주당순이익): {EPS}")
@@ -190,7 +186,17 @@ if selected_label:
     else:
         st.write(f"매출액: {SALES}")
 
-    # 적정주가 계산 버튼
+    # 계산식 파라미터 입력 UI
+    st.write("----")
+    st.subheader("적정주가 계산을 위한 입력값을 설정하세요")
+
+    per_avg = st.number_input("PER 평균", min_value=0.0, value=10.0, step=0.1)
+    peg_adj = st.number_input("PEG 조정치", value=0.0, step=0.1)
+    growth_weight = st.number_input("성장가중치", value=0.0, step=0.1)
+    roe_adj = st.number_input("ROE 보정계수", value=1.0, step=0.01)
+    sales_growth_adj = st.number_input("매출성장률 보정치", value=0.0, step=0.01)
+    stability_score = st.number_input("안정성 점수 (0~100)", min_value=0, max_value=100, value=80)
+
     if st.button("적정주가 계산"):
         try:
             EPS_val = float(EPS)
