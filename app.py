@@ -158,7 +158,7 @@ if selected_label:
 
     fin_data = extract_financial_items(financial_list)
 
-    # 주요 재무 데이터 추출
+    # 적정주가 계산식에 필요한 핵심 데이터만 표시
     EPS = fin_data.get("지배주주귀속순이익(손실) / 주식수(보통주)")
     if EPS is None:
         EPS = fin_data.get("주당순이익(지배주주귀속)")
@@ -168,23 +168,22 @@ if selected_label:
     ROE = fin_data.get("자기자본이익률(%)")
     SALES = fin_data.get("매출액")
 
-    st.write("### DART 재무정보 (최근 사업보고서)")
-    st.write(fin_data)
+    st.write("### DART 재무정보 (적정주가 계산용)")
 
-    if EPS is None:
+    if EPS is not None:
+        st.write(f"- EPS (주당순이익): {EPS}")
+    else:
         EPS = st.number_input("EPS (주당순이익)", value=0.0, step=0.01)
-    else:
-        st.write(f"EPS (주당순이익): {EPS}")
 
-    if ROE is None:
+    if ROE is not None:
+        st.write(f"- ROE (자기자본이익률 %): {ROE}")
+    else:
         ROE = st.number_input("ROE (자기자본이익률 %)", value=0.0, step=0.01)
-    else:
-        st.write(f"ROE: {ROE}")
 
-    if SALES is None:
-        SALES = st.number_input("매출액 (단위: 백만원)", value=0.0, step=1.0)
+    if SALES is not None:
+        st.write(f"- 매출액 (백만원): {SALES}")
     else:
-        st.write(f"매출액: {SALES}")
+        SALES = st.number_input("매출액 (단위: 백만원)", value=0.0, step=1.0)
 
     # 계산식 파라미터 입력 UI
     st.write("----")
