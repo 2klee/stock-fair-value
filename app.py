@@ -62,7 +62,6 @@ def fetch_dart_financial_data(corp_code, year, reprt_code="11011"):
     resp = requests.get("https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json", params=params)
     data = resp.json()
     if data.get("status") != "000":
-        st.warning(f"DART 재무 데이터 조회 실패: {data.get('message')}")
         return None
     return data.get("list", [])
 
@@ -148,12 +147,23 @@ if selected_label:
         st.stop()
 
     this_year = datetime.today().year
-    fin_list_last = fetch_dart_financial_data(corp_code, this_year)
-    fin_list_prev = fetch_dart_financial_data(corp_code, this_year - 1)
+
+    # 사업보고서(11011), 없으면 반기보고서(11012), 없으면 3분기보고서(11014) 순서로 조회
+    fin_list_last = fetch_dart_financial_data(corp_code, this_year - 1, reprt_code="11011")
+    if fin_list_last is None:
+        fin_list_last = fetch_dart_financial_data(corp_code, this_year - 1, reprt_code="11012")
+    if fin_list_last is None:
+        fin_list_last = fetch_dart_financial_data(corp_code, this_year - 1, reprt_code="11014")
 
     if fin_list_last is None:
         st.error("최근 연도 재무데이터를 불러올 수 없습니다.")
         st.stop()
+
+    fin_list_prev = fetch_dart_financial_data(corp_code, this_year - 2, reprt_code="11011")
+    if fin_list_prev is None:
+        fin_list_prev = fetch_dart_financial_data(corp_code, this_year - 2, reprt_code="11012")
+    if fin_list_prev is None:
+        fin_list_prev = fetch_dart_financial_data(corp_code, this_year - 2, reprt_code="11014")
 
     fin_map_last = extract_financial_items(fin_list_last)
     fin_map_prev = extract_financial_items(fin_list_prev) if fin_list_prev else {}
