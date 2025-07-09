@@ -158,8 +158,16 @@ if selected_label:
     fin_map_last = extract_financial_items(fin_list_last)
     fin_map_prev = extract_financial_items(fin_list_prev) if fin_list_prev else {}
 
+    net_income_ownership = fin_map_last.get("지배주주귀속순이익")
+    net_income_total = fin_map_last.get("당기순이익")
+
+    st.write(f"🔢 지배주주귀속순이익: {net_income_ownership if net_income_ownership is not None else '데이터 없음'}")
+    st.write(f"🔢 당기순이익: {net_income_total if net_income_total is not None else '데이터 없음'}")
+
     net_income = (
-        find_financial_value(fin_map_last, "지배주주귀속순이익", exact_match=True)
+        net_income_ownership
+        or net_income_total
+        or find_financial_value(fin_map_last, "지배주주귀속순이익", exact_match=True)
         or find_financial_value(fin_map_last, "당기순이익", exact_match=True)
     )
     equity = find_financial_value(fin_map_last, "자본총계", exact_match=True)
