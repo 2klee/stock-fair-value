@@ -85,36 +85,26 @@ def calculate_fair_price(eps, per_avg, peg_adj, growth_weight, roe_adj, sales_gr
     price = base * modifier * (stability_score / 100)
     return price
 
-# --- 자동 계산용 함수 ---
+# --- 자동 계산 함수 ---
 
-def calculate_eps(fin_map, stock_shares):
-    net_income = fin_map.get("지배주주귀속순이익(손실)")
-    if net_income is None:
-        net_income = fin_map.get("당기순이익")
+def calculate_eps(net_income, stock_shares):
     if net_income is None or stock_shares == 0:
         return None
     return net_income / stock_shares
 
-def calculate_roe(fin_map):
-    roe = fin_map.get("자기자본이익률(%)")
-    if roe is not None:
-        return roe
-    net_income = fin_map.get("당기순이익")
-    equity = fin_map.get("자본총계")
+def calculate_roe(net_income, equity):
     if net_income is None or equity is None or equity == 0:
         return None
     return (net_income / equity) * 100
 
-def calculate_sales_growth(fin_map_last, fin_map_prev):
-    sales_last = fin_map_last.get("매출액")
-    sales_prev = fin_map_prev.get("매출액")
+def calculate_sales_growth(sales_last, sales_prev):
     if sales_last is None or sales_prev is None or sales_prev == 0:
         return 0.0
     return (sales_last - sales_prev) / sales_prev * 100
 
 # --- Streamlit UI ---
 
-st.title("📊 KRX + DART 기반 적정주가 계산기")
+st.title("📊 KRX + DART 기반 자동 EPS/ROE/매출성장률 및 적정주가 계산기")
 
 yesterday = datetime.today() - timedelta(days=1)
 base_date = st.date_input("KRX 기준일자", yesterday).strftime("%Y%m%d")
@@ -136,34 +126,20 @@ if selected_label:
     selected_row = all_df[all_df["label"] == selected_label].iloc[0]
     st.write(f"### 선택 종목: {selected_row['ISU_NM_CLEAN']} ({selected_row['ISU_SRT_CD']})")
     st.write(f"시장구분: {'코스피' if selected_row['MKT_TP_NM']=='KOSPI' else '코스닥'}")
-    stock_shares = int(selected_row['LIST_SHRS'].replace(',', ''))
+
+    # 상장주식수 정수형 변환
+    try:
+        stock_shares = int(selected_row['LIST_SHRS'].replace(',', ''))
+    except Exception:
+        stock_shares = 0
     st.write(f"상장주식수: {stock_shares:,} 주")
 
     corp_code_map = get_corp_code_map()
     stock_code = selected_row["ISU_SRT_CD"]
-
-    corp_code = corp_code_map.get(stock_code)
-    if corp_code is None:
-        corp_code = corp_code_map.get(stock_code.lstrip("0"))
+    corp_code = corp_code_map.get(stock_code) or corp_code_map.get(stock_code.lstrip("0"))
 
     if corp_code is None:
-        st.error(f"DART 기업코드 매핑 실패: KRX 종목코드 '{stock_code}'가 DART DB에 없습니다.\n수동으로 입력하세요.")
-        per_avg = st.number_input("PER 평균", min_value=0.0, value=10.0, step=0.1)
-        peg_adj = st.number_input("PEG 조정치", value=0.0, step=0.1)
-        growth_weight = st.number_input("성장가중치", value=0.0, step=0.1)
-        roe_adj = st.number_input("ROE 보정계수", value=1.0, step=0.01)
-        sales_growth_adj = st.number_input("매출성장률 보정치", value=0.0, step=0.01)
-        stability_score = st.number_input("안정성 점수 (0~100)", min_value=0, max_value=100, value=80)
-        if st.button("적정주가 계산 (수동입력)"):
-            try:
-                # EPS, ROE 입력구간 없으니 0으로 처리하거나 직접 변수 정의
-                EPS = 0.0
-                fair_price = calculate_fair_price(
-                    EPS, per_avg, peg_adj, growth_weight, roe_adj, sales_growth_adj, stability_score
-                )
-                st.success(f"✅ 계산된 적정주가: {fair_price:,.2f} 원")
-            except Exception as e:
-                st.error(f"계산 중 오류 발생: {e}")
+        st.error(f"DART 기업코드 매핑 실패: KRX 종목코드 '{stock_code}'가 DART DB에 없습니다.")
         st.stop()
 
     this_year = datetime.today().year
@@ -173,15 +149,22 @@ if selected_label:
     fin_list_prev = fetch_dart_financial_data(corp_code, last_year - 1)
 
     if fin_list_last is None:
-        st.error("재무데이터(최근년도)를 불러올 수 없습니다.")
+        st.error("최근 연도 재무데이터를 불러올 수 없습니다.")
         st.stop()
 
     fin_map_last = extract_financial_items(fin_list_last)
     fin_map_prev = extract_financial_items(fin_list_prev) if fin_list_prev else {}
 
-    EPS = calculate_eps(fin_map_last, stock_shares)
-    ROE = calculate_roe(fin_map_last)
-    sales_growth = calculate_sales_growth(fin_map_last, fin_map_prev)
+    # 지배주주귀속순이익 또는 당기순이익 우선 사용
+    net_income = fin_map_last.get("지배주주귀속순이익(손실)") or fin_map_last.get("당기순이익")
+
+    equity = fin_map_last.get("자본총계")
+    sales_last = fin_map_last.get("매출액")
+    sales_prev = fin_map_prev.get("매출액")
+
+    EPS = calculate_eps(net_income, stock_shares)
+    ROE = calculate_roe(net_income, equity)
+    sales_growth = calculate_sales_growth(sales_last, sales_prev)
 
     st.write("### 자동 계산된 재무정보")
     st.write(f"- EPS (주당순이익): {EPS if EPS is not None else '데이터 없음'}")
@@ -199,17 +182,19 @@ if selected_label:
     stability_score = st.number_input("안정성 점수 (0~100)", min_value=0, max_value=100, value=80)
 
     if st.button("적정주가 계산"):
-        try:
-            EPS_val = float(EPS) if EPS is not None else 0.0
-            fair_price = calculate_fair_price(
-                EPS=EPS_val,
-                per_avg=per_avg,
-                peg_adj=peg_adj,
-                growth_weight=growth_weight,
-                roe_adj=roe_adj,
-                sales_growth_adj=sales_growth_adj,
-                stability_score=stability_score
-            )
-            st.success(f"✅ 계산된 적정주가: {fair_price:,.2f} 원")
-        except Exception as e:
-            st.error(f"계산 중 오류 발생: {e}")
+        if EPS is None:
+            st.error("EPS 데이터가 없어 계산할 수 없습니다.")
+        else:
+            try:
+                fair_price = calculate_fair_price(
+                    EPS=EPS,
+                    per_avg=per_avg,
+                    peg_adj=peg_adj,
+                    growth_weight=growth_weight,
+                    roe_adj=roe_adj,
+                    sales_growth_adj=sales_growth_adj,
+                    stability_score=stability_score
+                )
+                st.success(f"✅ 계산된 적정주가: {fair_price:,.2f} 원")
+            except Exception as e:
+                st.error(f"계산 중 오류 발생: {e}")
