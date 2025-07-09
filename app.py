@@ -73,10 +73,10 @@ def extract_financial_items(financial_list):
         key = item['account_nm'].strip()
         value = item['thstrm_amount']
         try:
-            if value.strip() == "":
+            if value is None or value.strip() == "":
                 value = None
             else:
-                value = float(value.replace(',', ''))
+                value = int(value.replace(',', ''))
         except:
             value = None
         result[key] = value
@@ -133,10 +133,11 @@ if selected_label:
 
     fin_map = extract_financial_items(fin_list)
 
-    net_income = (
-        find_financial_value(fin_map, "지배주주귀속순이익", exact_match=True)
-        or find_financial_value(fin_map, "당기순이익", exact_match=True)
-    )
+    net_income = None
+    for keyword in ["지배주주귀속순이익", "당기순이익", "ProfitLoss", "순이익"]:
+        net_income = find_financial_value(fin_map, keyword, exact_match=False)
+        if net_income is not None:
+            break
 
     st.write("### 재무정보")
     if net_income is None:
