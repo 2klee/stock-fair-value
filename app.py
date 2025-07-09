@@ -156,10 +156,16 @@ if selected_label:
     fin_map_last = extract_financial_items(fin_list_last)
     fin_map_prev = extract_financial_items(fin_list_prev) if fin_list_prev else {}
 
+    st.write("📄 DART 재무 계정명 목록:")
+    st.write(list(fin_map_last.keys()))
+
     net_income = find_financial_value(fin_map_last, "지배주주귀속순이익") or find_financial_value(fin_map_last, "당기순이익")
     equity = find_financial_value(fin_map_last, "자본총계")
     sales_last = find_financial_value(fin_map_last, "매출")
     sales_prev = find_financial_value(fin_map_prev, "매출")
+
+    st.write(f"🔢 net_income: {net_income}")
+    st.write(f"🔢 stock_shares: {stock_shares}")
 
     EPS = calculate_eps(net_income, stock_shares)
     ROE = calculate_roe(net_income, equity)
