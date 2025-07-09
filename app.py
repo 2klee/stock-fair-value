@@ -62,6 +62,7 @@ def fetch_dart_financial_data(corp_code, year, reprt_code="11011"):
     resp = requests.get("https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json", params=params)
     data = resp.json()
     if data.get("status") != "000":
+        st.warning(f"DART 재무 데이터 조회 실패: {data.get('message')}")
         return None
     return data.get("list", [])
 
@@ -147,37 +148,20 @@ if selected_label:
         st.stop()
 
     this_year = datetime.today().year
+    last_year = this_year - 1
 
-    # 사업보고서(11011), 없으면 반기보고서(11012), 없으면 3분기보고서(11014) 순서로 조회
-    fin_list_last = fetch_dart_financial_data(corp_code, this_year - 1, reprt_code="11011")
-    if fin_list_last is None:
-        fin_list_last = fetch_dart_financial_data(corp_code, this_year - 1, reprt_code="11012")
-    if fin_list_last is None:
-        fin_list_last = fetch_dart_financial_data(corp_code, this_year - 1, reprt_code="11014")
+    fin_list_last = fetch_dart_financial_data(corp_code, last_year, reprt_code="11011")
+    fin_list_prev = fetch_dart_financial_data(corp_code, last_year - 1, reprt_code="11011")
 
     if fin_list_last is None:
-        st.error("최근 연도 재무데이터를 불러올 수 없습니다.")
+        st.error(f"{last_year}년 사업보고서를 불러올 수 없습니다.")
         st.stop()
-
-    fin_list_prev = fetch_dart_financial_data(corp_code, this_year - 2, reprt_code="11011")
-    if fin_list_prev is None:
-        fin_list_prev = fetch_dart_financial_data(corp_code, this_year - 2, reprt_code="11012")
-    if fin_list_prev is None:
-        fin_list_prev = fetch_dart_financial_data(corp_code, this_year - 2, reprt_code="11014")
 
     fin_map_last = extract_financial_items(fin_list_last)
     fin_map_prev = extract_financial_items(fin_list_prev) if fin_list_prev else {}
 
-    net_income_ownership = fin_map_last.get("지배주주귀속순이익")
-    net_income_total = fin_map_last.get("당기순이익")
-
-    st.write(f"🔢 지배주주귀속순이익: {net_income_ownership if net_income_ownership is not None else '데이터 없음'}")
-    st.write(f"🔢 당기순이익: {net_income_total if net_income_total is not None else '데이터 없음'}")
-
     net_income = (
-        net_income_ownership
-        or net_income_total
-        or find_financial_value(fin_map_last, "지배주주귀속순이익", exact_match=True)
+        find_financial_value(fin_map_last, "지배주주귀속순이익", exact_match=True)
         or find_financial_value(fin_map_last, "당기순이익", exact_match=True)
     )
     equity = find_financial_value(fin_map_last, "자본총계", exact_match=True)
