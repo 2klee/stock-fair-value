@@ -132,9 +132,9 @@ if selected_label:
     fin_map = extract_financial_items(fin_list)
 
     net_income = None
-    for keyword in ["지배주주", "당기순", "ProfitLoss", "순이익"]:
-        net_income = find_financial_value(fin_map, keyword)
-        if net_income is not None:
+    for key, val in fin_map.items():
+        if "당기순이익" in key and val is not None:
+            net_income = val
             break
 
     st.write("### 재무정보")
