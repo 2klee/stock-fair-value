@@ -112,6 +112,12 @@ if selected_label:
     st.write(f"### 선택 종목: {selected_row['ISU_NM_CLEAN']} ({selected_row['ISU_SRT_CD']})")
     st.write(f"시장구분: {'코스피' if selected_row['MKT_TP_NM']=='KOSPI' else '코스닥'}")
 
+    try:
+        stock_shares = int(selected_row['LIST_SHRS'].replace(',', ''))
+    except:
+        stock_shares = 0
+    st.write(f"- 상장주식수: {stock_shares:,} 주")
+
     corp_code_map = get_corp_code_map()
     stock_code = selected_row["ISU_SRT_CD"]
     corp_code = corp_code_map.get(stock_code) or corp_code_map.get(stock_code.lstrip("0"))
