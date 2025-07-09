@@ -67,23 +67,21 @@ def fetch_dart_financial_data(corp_code):
             return data.get("list", []), year
     return None, None
 
-def extract_financial_items(financial_list):
-    result = {}
-    for item in financial_list:
-        key = item['account_nm'].strip()
-        value = item['thstrm_amount']
-        try:
-            if value is None or value.strip() == "":
-                value = None
-            else:
-                value = int(value.replace(',', ''))
-        except:
-            value = None
-        result[key] = value
-    return result
+def extract_amount(item):
+    value = item.get("thstrm_amount", "")
+    try:
+        return int(value.replace(',', '')) if value else None
+    except:
+        return None
+
+def calculate_growth_rate(current, previous):
+    try:
+        return round((current - previous) / previous, 4) if previous else 0
+    except:
+        return 0
 
 # --- Streamlit UI ---
-st.title("📊 KRX + DART 기반 재무정보 확인기")
+st.title("📊 KRX + DART 적정주가 계산기")
 
 yesterday = datetime.today() - timedelta(days=1)
 base_date = st.date_input("KRX 기준일자", yesterday).strftime("%Y%m%d")
@@ -103,12 +101,17 @@ selected_label = st.selectbox("종목 선택", options=all_df["label"].tolist())
 
 if selected_label:
     selected_row = all_df[all_df["label"] == selected_label].iloc[0]
-    st.write(f"### 선택 종목: {selected_row['ISU_NM_CLEAN']} ({selected_row['ISU_SRT_CD']})")
+    stock_code = selected_row["ISU_SRT_CD"]
+    st.write(f"### 선택 종목: {selected_row['ISU_NM_CLEAN']} ({stock_code})")
     st.write(f"시장구분: {'코스피' if selected_row['MKT_TP_NM']=='KOSPI' else '코스닥'}")
-    st.write(f"상장주식수: {int(selected_row['LIST_SHRS'].replace(',', '')):,} 주")
+    try:
+        shares_outstanding = int(selected_row['LIST_SHRS'].replace(',', ''))
+        st.write(f"상장주식수: {shares_outstanding:,} 주")
+    except:
+        shares_outstanding = None
+        st.warning("상장주식수 정보 없음")
 
     corp_code_map = get_corp_code_map()
-    stock_code = selected_row["ISU_SRT_CD"]
     corp_code = corp_code_map.get(stock_code) or corp_code_map.get(stock_code.lstrip("0"))
 
     if corp_code is None:
@@ -118,27 +121,44 @@ if selected_label:
     st.write(f"DART 기업코드: {corp_code}")
 
     fin_list, used_year = fetch_dart_financial_data(corp_code)
-
     if fin_list is None:
         st.error("최근 연도 재무데이터를 불러올 수 없습니다.")
         st.stop()
 
-    net_income = None
+    net_income, equity, revenue, revenue_prev = None, None, None, None
     for item in fin_list:
         name = item.get("account_nm", "")
-        account_id = item.get("account_id", "")
-        value = item.get("thstrm_amount", None)
-        if "당기순이익" in name and "비지배" not in name and account_id == "ifrs-full_ProfitLoss":
-            try:
-                net_income = int(value.replace(',', '')) if value else None
-                break
-            except:
-                continue
+        aid = item.get("account_id", "")
+        if aid == "ifrs-full_ProfitLoss" and "당기순이익" in name and "비지배" not in name:
+            net_income = extract_amount(item)
+        if name.strip() == "자본총계":
+            equity = extract_amount(item)
+        if name.strip() == "매출액":
+            revenue = extract_amount(item)
+            revenue_prev = extract_amount({"thstrm_amount": item.get("frmtrm_amount")})
 
-    st.write("### 재무정보")
-    if net_income is None:
-        st.write("- 최근 당기순이익: 데이터 없음")
-    elif net_income == 0:
-        st.write("- 최근 당기순이익: 0 (미제공 또는 미기입 가능성 있음)")
+    eps = net_income / shares_outstanding if net_income and shares_outstanding else None
+    roe = net_income / equity if net_income and equity else None
+    sales_growth = calculate_growth_rate(revenue, revenue_prev)
+
+    st.write("### 자동 계산된 재무 지표")
+    st.write(f"- EPS: {eps:.2f} 원" if eps else "- EPS: 계산 불가")
+    st.write(f"- ROE: {roe*100:.2f}%" if roe else "- ROE: 계산 불가")
+    st.write(f"- 매출성장률: {sales_growth*100:.2f}%" if sales_growth else "- 매출성장률: 계산 불가")
+
+    st.write("### 사용자 입력 (수정 가능)")
+    per = st.number_input("PER 평균", value=12.0)
+    peg_adj = st.number_input("PEG 조정치", value=0.8)
+    growth_weight = st.number_input("성장가중치", value=1.1)
+    roe_adj = st.number_input("ROE 보정계수", value=1.0)
+    stability_score = st.slider("안정성 점수 (0~100)", 0, 100, 80)
+
+    if eps and roe:
+        fair_price = (
+            eps * (per + peg_adj + growth_weight)
+            * (roe_adj + sales_growth)
+            * (stability_score / 100)
+        )
+        st.write(f"### 📈 적정주가: {fair_price:,.2f} 원")
     else:
-        st.write(f"- 최근 ({used_year}년) 당기순이익: {int(net_income):,} 원")
+        st.warning("EPS 또는 ROE 계산이 불가능하여 적정주가를 계산할 수 없습니다.")
