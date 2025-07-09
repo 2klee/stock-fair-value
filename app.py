@@ -82,14 +82,10 @@ def extract_financial_items(financial_list):
         result[key] = value
     return result
 
-def find_financial_value(fin_map, keyword, exact_match=False):
+def find_financial_value(fin_map, keyword):
     for key, val in fin_map.items():
-        if exact_match:
-            if keyword == key and val is not None:
-                return val
-        else:
-            if keyword in key and val is not None:
-                return val
+        if keyword in key and val is not None:
+            return val
     return None
 
 # --- Streamlit UI ---
@@ -136,8 +132,8 @@ if selected_label:
     fin_map = extract_financial_items(fin_list)
 
     net_income = None
-    for keyword in ["지배주주귀속순이익", "당기순이익", "ProfitLoss", "순이익"]:
-        net_income = find_financial_value(fin_map, keyword, exact_match=False)
+    for keyword in ["지배주주", "당기순", "ProfitLoss", "순이익"]:
+        net_income = find_financial_value(fin_map, keyword)
         if net_income is not None:
             break
 
