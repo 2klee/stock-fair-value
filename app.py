@@ -125,6 +125,8 @@ if selected_label:
         st.error(f"DART 기업코드 매핑 실패: 종목코드 '{stock_code}'가 DART DB에 없습니다.")
         st.stop()
 
+    st.write(f"DART 기업코드: {corp_code}")
+
     fin_list, used_year = fetch_dart_financial_data(corp_code)
 
     if fin_list is None:
